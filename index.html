@@ -228,25 +228,88 @@ function parseCSV(text) {
   });
 }
 
-function parseMarkdownOrBox(text) {
-  var lines = text.split('\n').filter(function(l) { return l.trim(); });
-  // Remove box-drawing characters
-  lines = lines.map(function(l) {
-    return l.replace(/[┌┐└┘├┤┬┴┼─]/g, '').replace(/│/g, '|').trim();
-  }).filter(function(l) { return l && l.replace(/[\|\-\s:]/g, '').length > 0; });
+// 合併同欄多行：CJK-CJK 邊界不加空格，其它補單一空格
+function smartJoin(parts) {
+  var out = '';
+  function isCJK(c) {
+    return (c >= 0x3000 && c <= 0x9FFF) || (c >= 0xFF00 && c <= 0xFFEF);
+  }
+  for (var i = 0; i < parts.length; i++) {
+    if (!parts[i]) continue;
+    if (!out) { out = parts[i]; continue; }
+    var lastCh = out.charCodeAt(out.length - 1);
+    var firstCh = parts[i].charCodeAt(0);
+    if (isCJK(lastCh) && isCJK(firstCh)) out += parts[i];
+    else out += ' ' + parts[i];
+  }
+  return out;
+}
 
-  var rows = [];
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i].trim();
+function parseMarkdownOrBox(text) {
+  var rawLines = text.split('\n');
+  var hasBox = /[┌┐└┘├┤┬┴┼─]/.test(text);
+
+  if (hasBox) {
+    // Box 格式：用分隔線（無 │ 的框線列）把內容切成多個「列群組」
+    // 每個群組內的所有行屬於同一邏輯列，逐欄合併
+    var separatorRe = /^[\s┌┐└┘├┤┬┴┼─]+$/;  // 只由框線字元/空白組成，不含 │
+    var groups = [];
+    var current = null;
+    for (var i = 0; i < rawLines.length; i++) {
+      var ln = rawLines[i];
+      if (!ln.trim()) continue;
+      if (separatorRe.test(ln)) {
+        if (current && current.length) { groups.push(current); }
+        current = null;
+        continue;
+      }
+      if (ln.indexOf('│') === -1) continue;
+      if (!current) current = [];
+      current.push(ln);
+    }
+    if (current && current.length) groups.push(current);
+
+    var rows = [];
+    for (var g = 0; g < groups.length; g++) {
+      var glines = groups[g];
+      var split = glines.map(function(l) {
+        var cells = l.split('│');
+        if (cells.length && cells[0].trim() === '') cells.shift();
+        if (cells.length && cells[cells.length - 1].trim() === '') cells.pop();
+        return cells.map(function(c) { return c.trim(); });
+      });
+      var colCount = 0;
+      for (var s = 0; s < split.length; s++) {
+        if (split[s].length > colCount) colCount = split[s].length;
+      }
+      var merged = [];
+      for (var c = 0; c < colCount; c++) {
+        var parts = [];
+        for (var li = 0; li < split.length; li++) {
+          var v = split[li][c] || '';
+          if (v) parts.push(v);
+        }
+        merged.push(smartJoin(parts));
+      }
+      if (merged.some(function(v) { return v; })) rows.push(merged);
+    }
+    return rows;
+  }
+
+  // Markdown（|）格式：原邏輯
+  var lines = rawLines.filter(function(l) { return l.trim(); });
+  var rows2 = [];
+  for (var j = 0; j < lines.length; j++) {
+    var line = lines[j].trim();
     if (/^\|?[\s\-:]+(\|[\s\-:]+)*\|?$/.test(line)) continue;
-    var cells = line.split('|').map(function(c) { return c.trim(); }).filter(function(c, idx, arr) {
+    var cells2 = line.split('|').map(function(c) { return c.trim(); }).filter(function(c, idx, arr) {
       if (idx === 0 && c === '') return false;
       if (idx === arr.length - 1 && c === '') return false;
       return true;
     });
-    if (cells.length > 0) rows.push(cells);
+    if (cells2.length > 0) rows2.push(cells2);
   }
-  return rows;
+  return rows2;
 }
 
 function render() {
