@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>Markdown Table → Notion</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Microsoft JhengHei", sans-serif; padding: 24px; background: #f9fafb; color: #1a1a1a; }
+  h1 { font-size: 1.2rem; margin-bottom: 4px; }
+  .hint { font-size: 0.8rem; color: #888; margin-bottom: 16px; }
+  .layout { display: flex; gap: 16px; height: calc(100vh - 100px); }
+  .panel { flex: 1; display: flex; flex-direction: column; }
+  label { font-weight: 600; font-size: 0.85rem; margin-bottom: 6px; }
+  textarea {
+    flex: 1; width: 100%; border: 1px solid #d1d5db; border-radius: 8px;
+    padding: 12px; font-family: "Cascadia Code", "Consolas", monospace;
+    font-size: 0.85rem; resize: none; line-height: 1.5;
+  }
+  textarea:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
+  .output {
+    flex: 1; border: 1px solid #d1d5db; border-radius: 8px;
+    padding: 12px; overflow: auto; background: #fff;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+  th { background: #f3f4f6; font-weight: 600; text-align: left; }
+  th, td { border: 1px solid #d1d5db; padding: 6px 10px; }
+  .actions { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
+  button {
+    padding: 6px 16px; border: none; border-radius: 6px; cursor: pointer;
+    font-size: 0.85rem; font-weight: 500; transition: background 0.15s;
+  }
+  .btn-primary { background: #6366f1; color: #fff; }
+  .btn-primary:hover { background: #4f46e5; }
+  .btn-outline { background: #fff; border: 1px solid #d1d5db; color: #374151; }
+  .btn-outline:hover { background: #f3f4f6; }
+  .toast { font-size: 0.8rem; color: #16a34a; opacity: 0; transition: opacity 0.3s; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<h1>Markdown Table → Notion</h1>
+<p class="hint">左邊貼入表格（支援 Markdown、TSV、CSV、CLI 框線）→ 右邊自動渲染 → 按「一鍵複製」→ 貼到 Notion</p>
+
+<div class="layout">
+  <div class="panel">
+    <label>貼入 Markdown 表格</label>
+    <textarea id="input" placeholder="| 功能 | 狀態 | 說明 |
+|------|------|------|
+| AI 摘要 | ✅ | 已完成 |"></textarea>
+  </div>
+  <div class="panel">
+    <label>預覽（選取此表格複製，貼到 Notion）</label>
+    <div class="output" id="output"></div>
+    <div class="actions">
+      <button class="btn-primary" onclick="copyTable()">一鍵複製表格</button>
+      <button class="btn-outline" onclick="document.getElementById('input').value=''; render();">清除</button>
+      <span class="toast" id="toast">已複製！貼到 Notion 即可</span>
+    </div>
+  </div>
+</div>
+
+<script>
+var input = document.getElementById('input');
+var output = document.getElementById('output');
+
+input.addEventListener('input', render);
+
+// 計算字元顯示寬度（CJK / 全形 / emoji = 2，零寬修飾 = 0，其他 = 1）
+function charWidth(code) {
+  // 零寬修飾符：VS16 變體選擇符、ZWJ 零寬連接符
+  if (code === 0xFE0F || code === 0x200D) return 0;
+  if ((code >= 0x1100 && code <= 0x115F) ||
+      (code >= 0x2600 && code <= 0x27BF) ||  // Misc Symbols + Dingbats (✅ ⚠ ❌)
+      (code >= 0x2E80 && code <= 0x303E) ||
+      (code >= 0x3041 && code <= 0x33FF) ||
+      (code >= 0x3400 && code <= 0x4DBF) ||
+      (code >= 0x4E00 && code <= 0x9FFF) ||
+      (code >= 0xA000 && code <= 0xA4CF) ||
+      (code >= 0xAC00 && code <= 0xD7A3) ||
+      (code >= 0xF900 && code <= 0xFAFF) ||
+      (code >= 0xFE30 && code <= 0xFE4F) ||
+      (code >= 0xFF00 && code <= 0xFF60) ||
+      (code >= 0xFFE0 && code <= 0xFFE6) ||
+      (code >= 0xD800 && code <= 0xDBFF)) {  // high surrogate → 視為雙寬 emoji
+    return 2;
+  }
+  // low surrogate → 當 0（配對的 high surrogate 已算寬度）
+  if (code >= 0xDC00 && code <= 0xDFFF) return 0;
+  return 1;
+}
+
+// 把一行字串展開成「顯示欄位 → 是否空格」的陣列（CJK 字元展開為 2 格）
+function buildSpaceMap(line) {
+  var map = [];
+  for (var i = 0; i < line.length; i++) {
+    var ch = line[i];
+    var w = charWidth(line.charCodeAt(i));
+    var isSpace = (ch === ' ');
+    for (var j = 0; j < w; j++) map.push(isSpace);
+  }
+  return map;
+}
+
+// 依顯示欄位範圍 [start, end) 取出原字串內容。
+// 對邊界字元寬鬆：只要字元顯示範圍的中點落在 [start, end) 內就收進來（非空格才算）。
+function sliceByDisplay(line, start, end) {
+  var pos = 0, out = '';
+  for (var i = 0; i < line.length; i++) {
+    var w = charWidth(line.charCodeAt(i));
+    if (w === 0) { out += line[i]; continue; }  // 零寬修飾符跟隨前字元
+    var charStart = pos, charEnd = pos + w;
+    var mid = charStart + w / 2;
+    // 整個在範圍內 → 收
+    if (charStart >= start && charEnd <= end) {
+      out += line[i];
+    } else if (mid > start && mid < end && line[i] !== ' ') {
+      // 邊界字元且非空格 → 用中點判定所屬欄位
+      out += line[i];
+    }
+    pos = charEnd;
+    if (pos >= end && charStart >= end) break;
+  }
+  return out.trim();
+}
+
+function detectFormat(text) {
+  // TSV: 有 tab 字元且多行
+  if (text.indexOf('\t') !== -1) return 'tsv';
+  // Box-drawing: 有框線字元
+  if (/[┌┐└┘├┤┬┴┼─│]/.test(text)) return 'box';
+  // Markdown: 有 | 字元
+  if (text.indexOf('|') !== -1) return 'markdown';
+  // 多空格對齊（CLI 複製格式）：
+  //  條件 1：至少 2 行有「非空格 + 2+ 空格 + 非空格」
+  //  或條件 2：用顯示寬度投票能找到 >=1 個共同空格欄
+  var lines = text.split('\n').filter(function(l) { return l.trim(); });
+  if (lines.length >= 2) {
+    var spaceColCount = 0;
+    for (var i = 0; i < Math.min(lines.length, 5); i++) {
+      if (/\S {2,}\S/.test(lines[i])) spaceColCount++;
+    }
+    if (spaceColCount >= 2) return 'spaces';
+    // 備援：看是否所有行在某顯示欄位一致為空格（支援 CJK 對齊）
+    if (findSpaceGaps(lines).length > 0) return 'spaces';
+  }
+  // CSV: 有逗號分隔（fallback）
+  if (lines.length > 1 && text.indexOf(',') !== -1) return 'csv';
+  return 'unknown';
+}
+
+// 在顯示欄位上投票找共同的空格間隔（2+ 格寬）。
+// 回傳 [{start, end}]，皆為顯示欄位。
+function findSpaceGaps(lines) {
+  var maps = lines.map(buildSpaceMap);
+  var maxW = 0;
+  for (var i = 0; i < maps.length; i++) if (maps[i].length > maxW) maxW = maps[i].length;
+  if (maxW === 0) return [];
+
+  // 對每個顯示欄位計數：有多少行該欄位是空格 / 有多少行這欄位有內容
+  var spaceCount = new Array(maxW).fill(0);
+  var presentCount = new Array(maxW).fill(0);
+  for (var m = 0; m < maps.length; m++) {
+    for (var p = 0; p < maps[m].length; p++) {
+      presentCount[p]++;
+      if (maps[m][p]) spaceCount[p]++;
+    }
+  }
+
+  // 門檻：超過 80% 「有內容的行」都在這欄位留空 → 視為分欄位置
+  var gaps = [];
+  var gapStart = -1;
+  for (var p2 = 0; p2 < maxW; p2++) {
+    var isGap = presentCount[p2] >= Math.ceil(lines.length * 0.5) &&
+                spaceCount[p2] >= Math.ceil(presentCount[p2] * 0.8);
+    if (isGap) {
+      if (gapStart === -1) gapStart = p2;
+    } else if (gapStart !== -1) {
+      if (p2 - gapStart >= 2) gaps.push({ start: gapStart, end: p2 });
+      gapStart = -1;
+    }
+  }
+  // 不納入「最前」和「最後」的大段空白
+  if (gaps.length > 0 && gaps[0].start === 0) gaps.shift();
+  return gaps;
+}
+
+function parseTSV(text) {
+  var lines = text.split('\n').filter(function(l) { return l.trim(); });
+  return lines.map(function(l) {
+    return l.split('\t').map(function(c) { return c.trim(); });
+  });
+}
+
+function parseSpaces(text) {
+  var lines = text.split('\n').filter(function(l) { return l.trim(); });
+  if (lines.length < 2) return [];
+
+  // 策略 1：最單純也最穩 — 直接用「2+ 空格」切，看每行欄數是否一致
+  var simple = lines.map(function(l) {
+    return l.split(/ {2,}/).map(function(c) { return c.trim(); }).filter(function(c) { return c; });
+  });
+  var cols = simple[0].length;
+  var allSame = simple.every(function(r) { return r.length === cols; });
+  if (allSame && cols >= 2) return simple;
+
+  // 策略 2：欄數不一致（通常是因為資料欄位內含 2+ 空格） → 用顯示欄位投票找共同分欄點
+  var gaps = findSpaceGaps(lines);
+  if (gaps.length === 0) return simple;  // 投票失敗也用 simple
+
+  return lines.map(function(line) {
+    var cells = [];
+    var colStart = 0;
+    for (var g = 0; g < gaps.length; g++) {
+      cells.push(sliceByDisplay(line, colStart, gaps[g].start));
+      colStart = gaps[g].end;
+    }
+    var lineWidth = buildSpaceMap(line).length;
+    cells.push(sliceByDisplay(line, colStart, lineWidth));
+    return cells;
+  });
+}
+
+function parseCSV(text) {
+  var lines = text.split('\n').filter(function(l) { return l.trim(); });
+  return lines.map(function(l) {
+    // Simple CSV parse (doesn't handle quoted commas)
+    return l.split(',').map(function(c) { return c.trim(); });
+  });
+}
+
+function parseMarkdownOrBox(text) {
+  var lines = text.split('\n').filter(function(l) { return l.trim(); });
+  // Remove box-drawing characters
+  lines = lines.map(function(l) {
+    return l.replace(/[┌┐└┘├┤┬┴┼─]/g, '').replace(/│/g, '|').trim();
+  }).filter(function(l) { return l && l.replace(/[\|\-\s:]/g, '').length > 0; });
+
+  var rows = [];
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (/^\|?[\s\-:]+(\|[\s\-:]+)*\|?$/.test(line)) continue;
+    var cells = line.split('|').map(function(c) { return c.trim(); }).filter(function(c, idx, arr) {
+      if (idx === 0 && c === '') return false;
+      if (idx === arr.length - 1 && c === '') return false;
+      return true;
+    });
+    if (cells.length > 0) rows.push(cells);
+  }
+  return rows;
+}
+
+function render() {
+  var text = input.value.trim();
+  if (!text) { output.innerHTML = '<span style="color:#aaa">等待輸入...</span>'; return; }
+
+  var fmt = detectFormat(text);
+  var rows;
+
+  if (fmt === 'tsv') {
+    rows = parseTSV(text);
+  } else if (fmt === 'spaces') {
+    rows = parseSpaces(text);
+  } else if (fmt === 'csv') {
+    rows = parseCSV(text);
+  } else if (fmt === 'markdown' || fmt === 'box') {
+    rows = parseMarkdownOrBox(text);
+  } else {
+    output.innerHTML = '<span style="color:#aaa">無法辨識格式（支援 Markdown、TSV、CSV、CLI 框線、空格對齊）</span>';
+    return;
+  }
+
+  if (rows.length === 0) { output.innerHTML = '<span style="color:#aaa">無法解析表格</span>'; return; }
+
+  // Show detected format
+  var fmtLabel = {tsv:'TSV (Tab 分隔)', csv:'CSV (逗號分隔)', markdown:'Markdown', box:'CLI 框線', spaces:'空格對齊 (CLI 複製)'}[fmt] || fmt;
+
+  // Build HTML table
+  var html = '<div style="font-size:0.75rem;color:#888;margin-bottom:6px;">偵測格式：' + fmtLabel + '（' + rows.length + ' 列 x ' + rows[0].length + ' 欄）</div>';
+  html += '<table><thead><tr>';
+  var header = rows[0];
+  for (var h = 0; h < header.length; h++) {
+    html += '<th>' + esc(header[h]) + '</th>';
+  }
+  html += '</tr></thead><tbody>';
+  for (var r = 1; r < rows.length; r++) {
+    html += '<tr>';
+    for (var c = 0; c < header.length; c++) {
+      html += '<td>' + esc(rows[r][c] || '') + '</td>';
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  output.innerHTML = html;
+}
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function copyTable() {
+  var table = output.querySelector('table');
+  if (!table) return;
+  var range = document.createRange();
+  range.selectNode(table);
+  var sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  document.execCommand('copy');
+  sel.removeAllRanges();
+  var toast = document.getElementById('toast');
+  toast.classList.add('show');
+  setTimeout(function() { toast.classList.remove('show'); }, 2000);
+}
+
+render();
+</script>
+</body>
+</html>
