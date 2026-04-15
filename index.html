@@ -2,14 +2,27 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<title>Markdown Table → Notion</title>
+<title>Markdown → Notion (Full)</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, "Microsoft JhengHei", sans-serif; padding: 24px; background: #f9fafb; color: #1a1a1a; }
+  body { font-family: -apple-system, "Microsoft JhengHei", sans-serif; padding: 20px; background: #f9fafb; color: #1a1a1a; }
   h1 { font-size: 1.2rem; margin-bottom: 4px; }
-  .hint { font-size: 0.8rem; color: #888; margin-bottom: 16px; }
-  .layout { display: flex; gap: 16px; height: calc(100vh - 100px); }
-  .panel { flex: 1; display: flex; flex-direction: column; }
+  .hint { font-size: 0.8rem; color: #888; margin-bottom: 12px; }
+  .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  button {
+    padding: 6px 16px; border: none; border-radius: 6px; cursor: pointer;
+    font-size: 0.85rem; font-weight: 500; transition: background 0.15s;
+  }
+  .btn-primary { background: #6366f1; color: #fff; }
+  .btn-primary:hover { background: #4f46e5; }
+  .btn-outline { background: #fff; border: 1px solid #d1d5db; color: #374151; }
+  .btn-outline:hover { background: #f3f4f6; }
+  .btn-danger { background: #ef4444; color: #fff; }
+  .btn-danger:hover { background: #dc2626; }
+  .toast { font-size: 0.8rem; color: #16a34a; opacity: 0; transition: opacity 0.3s; margin-left: 8px; }
+  .toast.show { opacity: 1; }
+  .layout { display: flex; gap: 16px; height: calc(100vh - 130px); }
+  .panel { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   label { font-weight: 600; font-size: 0.85rem; margin-bottom: 6px; }
   textarea {
     flex: 1; width: 100%; border: 1px solid #d1d5db; border-radius: 8px;
@@ -19,58 +32,97 @@
   textarea:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
   .output {
     flex: 1; border: 1px solid #d1d5db; border-radius: 8px;
-    padding: 12px; overflow: auto; background: #fff;
+    padding: 16px 20px; overflow: auto; background: #fff;
+    font-size: 0.9rem; line-height: 1.7;
   }
-  table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
-  th { background: #f3f4f6; font-weight: 600; text-align: left; }
-  th, td { border: 1px solid #d1d5db; padding: 6px 10px; }
-  .actions { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
-  button {
-    padding: 6px 16px; border: none; border-radius: 6px; cursor: pointer;
-    font-size: 0.85rem; font-weight: 500; transition: background 0.15s;
+
+  /* ---- Rendered content styles ---- */
+  .output h1 { font-size: 1.5rem; margin: 0.8em 0 0.4em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.3em; }
+  .output h2 { font-size: 1.25rem; margin: 0.7em 0 0.3em; }
+  .output h3 { font-size: 1.1rem; margin: 0.6em 0 0.3em; }
+  .output h4, .output h5, .output h6 { font-size: 1rem; margin: 0.5em 0 0.2em; }
+  .output p { margin: 0.5em 0; }
+  .output ul, .output ol { margin: 0.4em 0; padding-left: 1.8em; }
+  .output li { margin: 0.15em 0; }
+  .output li > ul, .output li > ol { margin: 0.1em 0; }
+  .output blockquote {
+    border-left: 3px solid #d1d5db; padding: 0.3em 0 0.3em 1em;
+    margin: 0.5em 0; color: #555;
   }
-  .btn-primary { background: #6366f1; color: #fff; }
-  .btn-primary:hover { background: #4f46e5; }
-  .btn-outline { background: #fff; border: 1px solid #d1d5db; color: #374151; }
-  .btn-outline:hover { background: #f3f4f6; }
-  .toast { font-size: 0.8rem; color: #16a34a; opacity: 0; transition: opacity 0.3s; }
-  .toast.show { opacity: 1; }
+  .output pre {
+    background: #1e1e1e; color: #d4d4d4; padding: 12px 16px;
+    border-radius: 6px; overflow-x: auto; margin: 0.5em 0;
+    font-family: "Cascadia Code", "Consolas", monospace; font-size: 0.82rem;
+    line-height: 1.5;
+  }
+  .output code {
+    background: #f3f4f6; padding: 0.15em 0.4em; border-radius: 3px;
+    font-family: "Cascadia Code", "Consolas", monospace; font-size: 0.88em;
+  }
+  .output pre code { background: none; padding: 0; border-radius: 0; font-size: inherit; color: inherit; }
+  .output table { border-collapse: collapse; width: 100%; margin: 0.5em 0; font-size: 0.85rem; }
+  .output th { background: #f3f4f6; font-weight: 600; text-align: left; }
+  .output th, .output td { border: 1px solid #d1d5db; padding: 6px 10px; }
+  .output hr { border: none; border-top: 1px solid #d1d5db; margin: 1em 0; }
+  .output strong { font-weight: 600; }
+  .output em { font-style: italic; }
+  .output a { color: #6366f1; text-decoration: underline; }
+  .output img { max-width: 100%; }
+
+  /* Task list */
+  .output .task-list { list-style: none; padding-left: 0.2em; }
+  .output .task-list li { display: flex; align-items: baseline; gap: 0.4em; }
+  .output .task-list input[type=checkbox] { margin: 0; pointer-events: none; }
 </style>
 </head>
 <body>
-<h1>Markdown Table → Notion</h1>
-<p class="hint">左邊貼入表格（支援 Markdown、TSV、CSV、CLI 框線）→ 右邊自動渲染 → 按「一鍵複製」→ 貼到 Notion</p>
+<h1>Markdown → Notion (Full)</h1>
+<p class="hint">整段 CLI 輸出貼入左邊 → 右邊即時預覽（標題、段落、清單、程式碼、表格全部支援）→ 一鍵複製 → 貼到 Notion</p>
+
+<div class="toolbar">
+  <button class="btn-primary" onclick="copyAll()">一鍵複製全部</button>
+  <button class="btn-outline" onclick="copyTableOnly()">只複製表格</button>
+  <button class="btn-outline" onclick="document.getElementById('input').value=''; render();">清除</button>
+  <span class="toast" id="toast"></span>
+</div>
 
 <div class="layout">
   <div class="panel">
-    <label>貼入 Markdown 表格</label>
-    <textarea id="input" placeholder="| 功能 | 狀態 | 說明 |
-|------|------|------|
-| AI 摘要 | ✅ | 已完成 |"></textarea>
+    <label>貼入 CLI 輸出 / Markdown</label>
+    <textarea id="input" placeholder="直接貼上整段 CLI 輸出，支援：
+# 標題
+段落文字、**粗體**、*斜體*、`行內程式碼`
+
+- 清單項目
+- [ ] 任務清單
+
+```python
+code blocks
+```
+
+| 欄位 | 值 |
+|------|------|
+| A    | B   |
+
+也支援 CLI 框線表格（┌─┐│└─┘）"></textarea>
   </div>
   <div class="panel">
-    <label>預覽（選取此表格複製，貼到 Notion）</label>
-    <div class="output" id="output"></div>
-    <div class="actions">
-      <button class="btn-primary" onclick="copyTable()">一鍵複製表格</button>
-      <button class="btn-outline" onclick="document.getElementById('input').value=''; render();">清除</button>
-      <span class="toast" id="toast">已複製！貼到 Notion 即可</span>
-    </div>
+    <label>預覽</label>
+    <div class="output" id="output"><span style="color:#aaa">等待輸入...</span></div>
   </div>
 </div>
 
 <script>
 var input = document.getElementById('input');
 var output = document.getElementById('output');
-
 input.addEventListener('input', render);
 
-// 計算字元顯示寬度（CJK / 全形 / emoji = 2，零寬修飾 = 0，其他 = 1）
+// ========== Box-drawing table parser (from existing tool) ==========
+
 function charWidth(code) {
-  // 零寬修飾符：VS16 變體選擇符、ZWJ 零寬連接符
   if (code === 0xFE0F || code === 0x200D) return 0;
   if ((code >= 0x1100 && code <= 0x115F) ||
-      (code >= 0x2600 && code <= 0x27BF) ||  // Misc Symbols + Dingbats (✅ ⚠ ❌)
+      (code >= 0x2600 && code <= 0x27BF) ||
       (code >= 0x2E80 && code <= 0x303E) ||
       (code >= 0x3041 && code <= 0x33FF) ||
       (code >= 0x3400 && code <= 0x4DBF) ||
@@ -81,40 +133,33 @@ function charWidth(code) {
       (code >= 0xFE30 && code <= 0xFE4F) ||
       (code >= 0xFF00 && code <= 0xFF60) ||
       (code >= 0xFFE0 && code <= 0xFFE6) ||
-      (code >= 0xD800 && code <= 0xDBFF)) {  // high surrogate → 視為雙寬 emoji
+      (code >= 0xD800 && code <= 0xDBFF)) {
     return 2;
   }
-  // low surrogate → 當 0（配對的 high surrogate 已算寬度）
   if (code >= 0xDC00 && code <= 0xDFFF) return 0;
   return 1;
 }
 
-// 把一行字串展開成「顯示欄位 → 是否空格」的陣列（CJK 字元展開為 2 格）
 function buildSpaceMap(line) {
   var map = [];
   for (var i = 0; i < line.length; i++) {
-    var ch = line[i];
     var w = charWidth(line.charCodeAt(i));
-    var isSpace = (ch === ' ');
+    var isSpace = (line[i] === ' ');
     for (var j = 0; j < w; j++) map.push(isSpace);
   }
   return map;
 }
 
-// 依顯示欄位範圍 [start, end) 取出原字串內容。
-// 對邊界字元寬鬆：只要字元顯示範圍的中點落在 [start, end) 內就收進來（非空格才算）。
 function sliceByDisplay(line, start, end) {
   var pos = 0, out = '';
   for (var i = 0; i < line.length; i++) {
     var w = charWidth(line.charCodeAt(i));
-    if (w === 0) { out += line[i]; continue; }  // 零寬修飾符跟隨前字元
+    if (w === 0) { out += line[i]; continue; }
     var charStart = pos, charEnd = pos + w;
     var mid = charStart + w / 2;
-    // 整個在範圍內 → 收
     if (charStart >= start && charEnd <= end) {
       out += line[i];
     } else if (mid > start && mid < end && line[i] !== ' ') {
-      // 邊界字元且非空格 → 用中點判定所屬欄位
       out += line[i];
     }
     pos = charEnd;
@@ -123,40 +168,11 @@ function sliceByDisplay(line, start, end) {
   return out.trim();
 }
 
-function detectFormat(text) {
-  // TSV: 有 tab 字元且多行
-  if (text.indexOf('\t') !== -1) return 'tsv';
-  // Box-drawing: 有框線字元
-  if (/[┌┐└┘├┤┬┴┼─│]/.test(text)) return 'box';
-  // Markdown: 有 | 字元
-  if (text.indexOf('|') !== -1) return 'markdown';
-  // 多空格對齊（CLI 複製格式）：
-  //  條件 1：至少 2 行有「非空格 + 2+ 空格 + 非空格」
-  //  或條件 2：用顯示寬度投票能找到 >=1 個共同空格欄
-  var lines = text.split('\n').filter(function(l) { return l.trim(); });
-  if (lines.length >= 2) {
-    var spaceColCount = 0;
-    for (var i = 0; i < Math.min(lines.length, 5); i++) {
-      if (/\S {2,}\S/.test(lines[i])) spaceColCount++;
-    }
-    if (spaceColCount >= 2) return 'spaces';
-    // 備援：看是否所有行在某顯示欄位一致為空格（支援 CJK 對齊）
-    if (findSpaceGaps(lines).length > 0) return 'spaces';
-  }
-  // CSV: 有逗號分隔（fallback）
-  if (lines.length > 1 && text.indexOf(',') !== -1) return 'csv';
-  return 'unknown';
-}
-
-// 在顯示欄位上投票找共同的空格間隔（2+ 格寬）。
-// 回傳 [{start, end}]，皆為顯示欄位。
 function findSpaceGaps(lines) {
   var maps = lines.map(buildSpaceMap);
   var maxW = 0;
   for (var i = 0; i < maps.length; i++) if (maps[i].length > maxW) maxW = maps[i].length;
   if (maxW === 0) return [];
-
-  // 對每個顯示欄位計數：有多少行該欄位是空格 / 有多少行這欄位有內容
   var spaceCount = new Array(maxW).fill(0);
   var presentCount = new Array(maxW).fill(0);
   for (var m = 0; m < maps.length; m++) {
@@ -165,8 +181,6 @@ function findSpaceGaps(lines) {
       if (maps[m][p]) spaceCount[p]++;
     }
   }
-
-  // 門檻：超過 80% 「有內容的行」都在這欄位留空 → 視為分欄位置
   var gaps = [];
   var gapStart = -1;
   for (var p2 = 0; p2 < maxW; p2++) {
@@ -179,61 +193,13 @@ function findSpaceGaps(lines) {
       gapStart = -1;
     }
   }
-  // 不納入「最前」和「最後」的大段空白
   if (gaps.length > 0 && gaps[0].start === 0) gaps.shift();
   return gaps;
 }
 
-function parseTSV(text) {
-  var lines = text.split('\n').filter(function(l) { return l.trim(); });
-  return lines.map(function(l) {
-    return l.split('\t').map(function(c) { return c.trim(); });
-  });
-}
-
-function parseSpaces(text) {
-  var lines = text.split('\n').filter(function(l) { return l.trim(); });
-  if (lines.length < 2) return [];
-
-  // 策略 1：最單純也最穩 — 直接用「2+ 空格」切，看每行欄數是否一致
-  var simple = lines.map(function(l) {
-    return l.split(/ {2,}/).map(function(c) { return c.trim(); }).filter(function(c) { return c; });
-  });
-  var cols = simple[0].length;
-  var allSame = simple.every(function(r) { return r.length === cols; });
-  if (allSame && cols >= 2) return simple;
-
-  // 策略 2：欄數不一致（通常是因為資料欄位內含 2+ 空格） → 用顯示欄位投票找共同分欄點
-  var gaps = findSpaceGaps(lines);
-  if (gaps.length === 0) return simple;  // 投票失敗也用 simple
-
-  return lines.map(function(line) {
-    var cells = [];
-    var colStart = 0;
-    for (var g = 0; g < gaps.length; g++) {
-      cells.push(sliceByDisplay(line, colStart, gaps[g].start));
-      colStart = gaps[g].end;
-    }
-    var lineWidth = buildSpaceMap(line).length;
-    cells.push(sliceByDisplay(line, colStart, lineWidth));
-    return cells;
-  });
-}
-
-function parseCSV(text) {
-  var lines = text.split('\n').filter(function(l) { return l.trim(); });
-  return lines.map(function(l) {
-    // Simple CSV parse (doesn't handle quoted commas)
-    return l.split(',').map(function(c) { return c.trim(); });
-  });
-}
-
-// 合併同欄多行：CJK-CJK 邊界不加空格，其它補單一空格
 function smartJoin(parts) {
   var out = '';
-  function isCJK(c) {
-    return (c >= 0x3000 && c <= 0x9FFF) || (c >= 0xFF00 && c <= 0xFFEF);
-  }
+  function isCJK(c) { return (c >= 0x3000 && c <= 0x9FFF) || (c >= 0xFF00 && c <= 0xFFEF); }
   for (var i = 0; i < parts.length; i++) {
     if (!parts[i]) continue;
     if (!out) { out = parts[i]; continue; }
@@ -245,101 +211,54 @@ function smartJoin(parts) {
   return out;
 }
 
-function parseMarkdownOrBox(text) {
-  var rawLines = text.split('\n');
-  var hasBox = /[┌┐└┘├┤┬┴┼─]/.test(text);
-
-  if (hasBox) {
-    // Box 格式：用分隔線（無 │ 的框線列）把內容切成多個「列群組」
-    // 每個群組內的所有行屬於同一邏輯列，逐欄合併
-    var separatorRe = /^[\s┌┐└┘├┤┬┴┼─]+$/;  // 只由框線字元/空白組成，不含 │
-    var groups = [];
-    var current = null;
-    for (var i = 0; i < rawLines.length; i++) {
-      var ln = rawLines[i];
-      if (!ln.trim()) continue;
-      if (separatorRe.test(ln)) {
-        if (current && current.length) { groups.push(current); }
-        current = null;
-        continue;
-      }
-      if (ln.indexOf('│') === -1) continue;
-      if (!current) current = [];
-      current.push(ln);
+function parseBoxTable(lines) {
+  var separatorRe = /^[\s\u250C\u2510\u2514\u2518\u251C\u2524\u252C\u2534\u253C\u2500]+$/;
+  var groups = [];
+  var current = null;
+  for (var i = 0; i < lines.length; i++) {
+    var ln = lines[i];
+    if (!ln.trim()) continue;
+    if (separatorRe.test(ln)) {
+      if (current && current.length) groups.push(current);
+      current = null;
+      continue;
     }
-    if (current && current.length) groups.push(current);
-
-    var rows = [];
-    for (var g = 0; g < groups.length; g++) {
-      var glines = groups[g];
-      var split = glines.map(function(l) {
-        var cells = l.split('│');
-        if (cells.length && cells[0].trim() === '') cells.shift();
-        if (cells.length && cells[cells.length - 1].trim() === '') cells.pop();
-        return cells.map(function(c) { return c.trim(); });
-      });
-      var colCount = 0;
-      for (var s = 0; s < split.length; s++) {
-        if (split[s].length > colCount) colCount = split[s].length;
-      }
-      var merged = [];
-      for (var c = 0; c < colCount; c++) {
-        var parts = [];
-        for (var li = 0; li < split.length; li++) {
-          var v = split[li][c] || '';
-          if (v) parts.push(v);
-        }
-        merged.push(smartJoin(parts));
-      }
-      if (merged.some(function(v) { return v; })) rows.push(merged);
-    }
-    return rows;
+    if (ln.indexOf('\u2502') === -1) continue;
+    if (!current) current = [];
+    current.push(ln);
   }
+  if (current && current.length) groups.push(current);
 
-  // Markdown（|）格式：原邏輯
-  var lines = rawLines.filter(function(l) { return l.trim(); });
-  var rows2 = [];
-  for (var j = 0; j < lines.length; j++) {
-    var line = lines[j].trim();
-    if (/^\|?[\s\-:]+(\|[\s\-:]+)*\|?$/.test(line)) continue;
-    var cells2 = line.split('|').map(function(c) { return c.trim(); }).filter(function(c, idx, arr) {
-      if (idx === 0 && c === '') return false;
-      if (idx === arr.length - 1 && c === '') return false;
-      return true;
+  var rows = [];
+  for (var g = 0; g < groups.length; g++) {
+    var glines = groups[g];
+    var split = glines.map(function(l) {
+      var cells = l.split('\u2502');
+      if (cells.length && cells[0].trim() === '') cells.shift();
+      if (cells.length && cells[cells.length - 1].trim() === '') cells.pop();
+      return cells.map(function(c) { return c.trim(); });
     });
-    if (cells2.length > 0) rows2.push(cells2);
+    var colCount = 0;
+    for (var s = 0; s < split.length; s++) {
+      if (split[s].length > colCount) colCount = split[s].length;
+    }
+    var merged = [];
+    for (var c = 0; c < colCount; c++) {
+      var parts = [];
+      for (var li = 0; li < split.length; li++) {
+        var v = split[li][c] || '';
+        if (v) parts.push(v);
+      }
+      merged.push(smartJoin(parts));
+    }
+    if (merged.some(function(v) { return v; })) rows.push(merged);
   }
-  return rows2;
+  return rows;
 }
 
-function render() {
-  var text = input.value.trim();
-  if (!text) { output.innerHTML = '<span style="color:#aaa">等待輸入...</span>'; return; }
-
-  var fmt = detectFormat(text);
-  var rows;
-
-  if (fmt === 'tsv') {
-    rows = parseTSV(text);
-  } else if (fmt === 'spaces') {
-    rows = parseSpaces(text);
-  } else if (fmt === 'csv') {
-    rows = parseCSV(text);
-  } else if (fmt === 'markdown' || fmt === 'box') {
-    rows = parseMarkdownOrBox(text);
-  } else {
-    output.innerHTML = '<span style="color:#aaa">無法辨識格式（支援 Markdown、TSV、CSV、CLI 框線、空格對齊）</span>';
-    return;
-  }
-
-  if (rows.length === 0) { output.innerHTML = '<span style="color:#aaa">無法解析表格</span>'; return; }
-
-  // Show detected format
-  var fmtLabel = {tsv:'TSV (Tab 分隔)', csv:'CSV (逗號分隔)', markdown:'Markdown', box:'CLI 框線', spaces:'空格對齊 (CLI 複製)'}[fmt] || fmt;
-
-  // Build HTML table
-  var html = '<div style="font-size:0.75rem;color:#888;margin-bottom:6px;">偵測格式：' + fmtLabel + '（' + rows.length + ' 列 x ' + rows[0].length + ' 欄）</div>';
-  html += '<table><thead><tr>';
+function rowsToHtml(rows) {
+  if (rows.length === 0) return '';
+  var html = '<table><thead><tr>';
   var header = rows[0];
   for (var h = 0; h < header.length; h++) {
     html += '<th>' + esc(header[h]) + '</th>';
@@ -353,28 +272,574 @@ function render() {
     html += '</tr>';
   }
   html += '</tbody></table>';
-  output.innerHTML = html;
+  return html;
 }
+
+// ========== Markdown Parser ==========
 
 function esc(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-function copyTable() {
-  var table = output.querySelector('table');
-  if (!table) return;
+// Inline formatting
+function inlineFormat(text) {
+  var s = esc(text);
+  // Images: ![alt](url)
+  s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
+  // Links: [text](url)
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+  // Bold+italic: ***text*** or ___text___
+  s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  s = s.replace(/___(.+?)___/g, '<strong><em>$1</em></strong>');
+  // Bold: **text** or __text__
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/__(.+?)__/g, '<strong>$1</strong>');
+  // Italic: *text* or _text_
+  s = s.replace(/(?<!\w)\*([^\s*](?:.*?[^\s*])?)\*(?!\w)/g, '<em>$1</em>');
+  s = s.replace(/(?<!\w)_([^\s_](?:.*?[^\s_])?)_(?!\w)/g, '<em>$1</em>');
+  // Strikethrough: ~~text~~
+  s = s.replace(/~~(.+?)~~/g, '<del>$1</del>');
+  // Inline code: `code`
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  return s;
+}
+
+// Check if a line contains box-drawing characters
+function isBoxLine(line) {
+  return /[\u250C\u2510\u2514\u2518\u251C\u2524\u252C\u2534\u253C\u2500\u2502]/.test(line);
+}
+
+// Distinguish box TABLE from TREE.
+// Table-only chars: ┌ (U+250C), ┐ (U+2510), ┬ (U+252C), ┴ (U+2534), ┼ (U+253C)
+// These form the rectangular frame/grid of a table. Trees never use ┌┐┬┴┼.
+// Note: └ (U+2514) and ┘ (U+2518) are shared — trees use └── for last child,
+// tables use └┘ for bottom corners. So we exclude them from table-only detection.
+function isBoxTableLine(line) {
+  return /[\u250C\u2510\u253C\u252C\u2534]/.test(line);
+}
+
+// Tree line: has ├ or └ or │ combined with ─
+function isTreeLine(line) {
+  return /[\u251C\u2514\u2502]/.test(line) && /\u2500/.test(line);
+}
+
+// Detect if a line starts a new block (used by paragraph collector)
+function isBlockStart(lines, i) {
+  var line = lines[i];
+  if (!line || line.trim() === '') return true;
+  if (line.match(/^(#{1,6})\s/)) return true;
+  if (line.match(/^(`{3,}|~{3,})/)) return true;
+  if (line.match(/^>\s?/)) return true;
+  if (line.match(/^([-*+])\s/)) return true;       // top-level ul only (no leading space)
+  if (line.match(/^\d+\.\s/)) return true;          // top-level ol only
+  if (isBoxLine(line)) return true;
+  if (/^(\*{3,}|-{3,}|_{3,})\s*$/.test(line.trim())) return true;
+  // Pipe table: current line has | AND next line is separator
+  if (line.indexOf('|') !== -1 && i + 1 < lines.length && lines[i + 1] &&
+      /^\|?[\s\-:]+(\|[\s\-:]+)+\|?\s*$/.test(lines[i + 1])) return true;
+  // Code/diff block
+  if (detectCodeBlock(lines, i) > i) return true;
+  // Tree header: non-box line immediately followed by tree lines
+  if (!isBoxLine(line) && hasBoxLineNearby(lines, i + 1, 2)) {
+    for (var pk = i + 1; pk < Math.min(lines.length, i + 3); pk++) {
+      if (isBoxLine(lines[pk]) && isTreeBlock(lines, pk)) return true;
+    }
+  }
+  return false;
+}
+
+// Look ahead from line i: does this box-drawing region contain tree lines (├└)
+// without table corners (┌┐┘└ used as frame)? If so it's a tree, not a table.
+function isTreeBlock(lines, i) {
+  var hasTree = false;
+  var hasTableCorner = false;
+  var j = i;
+  var gapCount = 0;
+  while (j < lines.length && gapCount < 3) {
+    var ln = lines[j];
+    if (ln.trim() === '') { gapCount++; j++; continue; }
+    if (isBoxLine(ln)) {
+      gapCount = 0;
+      if (isTreeLine(ln)) hasTree = true;
+      if (isBoxTableLine(ln)) hasTableCorner = true;
+    } else {
+      gapCount++;
+    }
+    j++;
+  }
+  return hasTree && !hasTableCorner;
+}
+
+// Check if there's a box-drawing (tree) line within the next N lines
+function hasBoxLineNearby(lines, from, range) {
+  for (var j = from; j < Math.min(lines.length, from + range); j++) {
+    if (isBoxLine(lines[j])) return true;
+  }
+  return false;
+}
+
+// Check if a line looks like line-numbered code (e.g. "  166  content" or "  170")
+// Distinguishes from ordered lists (which have "1." format)
+// Allow up to 16 leading spaces (CLI output can be deeply indented)
+function isLineNumbered(line) {
+  return /^\s{0,16}\d{1,6}(\s{2,}|\t|$)/.test(line);
+}
+
+// Check if a line looks like CLI edit output (diff markers, file update status, etc.)
+// Claude Code CLI uses special Unicode chars: ● (U+25CF) instead of *, ⎿ (U+23BF) instead of |
+function isCliEditLine(line) {
+  var trimmed = line.trim();
+  // diff markers: +++ --- @@
+  if (/^(\+{3}|-{3})\s?/.test(trimmed)) return true;
+  if (/^@@\s/.test(trimmed)) return true;
+  // Claude Code edit output: any bullet/prefix + Update/Create/Write/Edit/Delete(path)
+  // Handles: "* Update(...)", "● Update(...)", "Update(...)", etc.
+  if (/^.{0,2}\s*(update|Update|create|Create|delete|Delete|edit|Edit|write|Write)\(/.test(trimmed)) return true;
+  // Status line: any prefix + "Added N lines" / "Removed N lines" etc.
+  // Handles: "| Added...", "⎿ Added...", "Added...", "⎿  Added...", etc.
+  if (/^.{0,4}(Added|Removed|Changed|Deleted)\s+\d+/i.test(trimmed)) return true;
+  return false;
+}
+
+// Check if a line is "inside" a code block: indented (2+ spaces), or starts with
+// common code-context prefixes like > (quoted path in CLI output)
+function isCodeContinuation(line) {
+  // Indented with 2+ spaces (continuation line, wrapped content, etc.)
+  if (/^\s{2,}\S/.test(line)) return true;
+  // Single-space indented lines that look like content (not markdown list)
+  if (/^\s\S/.test(line) && !/^\s[-*+]\s/.test(line)) return true;
+  return false;
+}
+
+// Check if a block starting at i looks like a code/diff block.
+// Strategy: find the first "anchor" (line-numbered or CLI edit line),
+// then greedily expand to include all indented/continuation lines.
+// Returns end index if yes (>i), or -1 if not.
+function detectCodeBlock(lines, i) {
+  // Phase 1: scan forward to count anchors and find the block boundary
+  var j = i;
+  var anchorCount = 0;
+  var lastContentLine = -1;
+  var consecutiveNonCode = 0;
+
+  while (j < lines.length) {
+    var ln = lines[j];
+
+    if (ln.trim() === '') {
+      // Blank line: tentatively include, but track gap
+      consecutiveNonCode++;
+      if (consecutiveNonCode > 2) break;  // 3+ blank/non-code lines = end of block
+      j++;
+      continue;
+    }
+
+    if (isLineNumbered(ln) || isCliEditLine(ln)) {
+      // Definite code line (anchor)
+      anchorCount++;
+      lastContentLine = j;
+      consecutiveNonCode = 0;
+      j++;
+    } else if (anchorCount >= 1 && isCodeContinuation(ln)) {
+      // Indented continuation: part of the code block once we have an anchor
+      lastContentLine = j;
+      consecutiveNonCode = 0;
+      j++;
+    } else {
+      // Non-code, non-indented line
+      if (anchorCount >= 2) {
+        // Already in a code block — check if more code follows soon
+        var moreCode = false;
+        for (var p = j + 1; p < Math.min(lines.length, j + 4); p++) {
+          if (lines[p] && (isLineNumbered(lines[p]) || isCliEditLine(lines[p]))) {
+            moreCode = true; break;
+          }
+        }
+        if (moreCode) {
+          lastContentLine = j;
+          consecutiveNonCode = 0;
+          j++;
+          continue;
+        }
+      }
+      break;
+    }
+  }
+
+  if (anchorCount >= 2 && lastContentLine >= i) {
+    return lastContentLine + 1;
+  }
+  return -1;
+}
+
+// Main parser: splits input into blocks and renders each
+function parseMarkdown(text) {
+  var lines = text.split('\n');
+  var html = '';
+  var i = 0;
+
+  while (i < lines.length) {
+    var line = lines[i];
+
+    // Empty line → skip
+    if (line.trim() === '') { i++; continue; }
+
+    // Fenced code block: ``` or ~~~
+    var fenceMatch = line.match(/^(`{3,}|~{3,})(\w*)/);
+    if (fenceMatch) {
+      var fence = fenceMatch[1];
+      var codeLines = [];
+      i++;
+      while (i < lines.length) {
+        if (lines[i].trim() === fence || lines[i].trim().indexOf(fence) === 0) { i++; break; }
+        codeLines.push(lines[i]);
+        i++;
+      }
+      html += '<pre><code>' + esc(codeLines.join('\n')) + '</code></pre>';
+      continue;
+    }
+
+    // CLI code/diff block: lines with line numbers, diff markers, update() output
+    var codeEnd = detectCodeBlock(lines, i);
+    if (codeEnd > i) {
+      // Collect all lines from i to codeEnd, including blanks
+      var codeBlockLines = [];
+      for (var ci = i; ci < codeEnd; ci++) {
+        codeBlockLines.push(lines[ci]);
+      }
+      // Trim trailing blank lines
+      while (codeBlockLines.length > 0 && codeBlockLines[codeBlockLines.length - 1].trim() === '') {
+        codeBlockLines.pop();
+        codeEnd--;
+      }
+      html += '<pre><code>' + esc(codeBlockLines.join('\n')) + '</code></pre>';
+      i = codeEnd;
+      continue;
+    }
+
+    // Tree structure block (├── └── │): render as <pre> to preserve alignment.
+    // Also includes interleaved text lines (headers between tree branches)
+    // as long as more tree lines follow nearby.
+    // Detect: line itself has box chars, OR next 1-2 lines start a tree block
+    // (captures "header" lines like ★ ... that precede ├──)
+    var treeStart = isBoxLine(line) && isTreeBlock(lines, i);
+    if (!treeStart && !isBoxLine(line) && line.trim() !== '' && hasBoxLineNearby(lines, i + 1, 2)) {
+      // Check if what follows is a tree (not a table)
+      for (var peek = i + 1; peek < Math.min(lines.length, i + 3); peek++) {
+        if (isBoxLine(lines[peek]) && isTreeBlock(lines, peek)) { treeStart = true; break; }
+      }
+    }
+    if (treeStart) {
+      var treeLines = [];
+      // Also grab the line immediately before if it looks like a tree header
+      // (non-empty, non-block line right before the first ├──)
+      while (i < lines.length) {
+        if (isBoxLine(lines[i])) {
+          // Definite tree line
+          treeLines.push(lines[i]);
+          i++;
+        } else if (lines[i].trim() === '') {
+          // Blank line: keep if more tree lines follow within 3 lines
+          if (hasBoxLineNearby(lines, i + 1, 3)) {
+            treeLines.push(lines[i]);
+            i++;
+          } else {
+            break;
+          }
+        } else {
+          // Non-box text line: keep if more tree lines follow within 3 lines
+          // (this captures interleaved headers like ★★ ... between ├── branches)
+          if (hasBoxLineNearby(lines, i + 1, 3)) {
+            treeLines.push(lines[i]);
+            i++;
+          } else {
+            break;
+          }
+        }
+      }
+      html += '<pre><code>' + esc(treeLines.join('\n')) + '</code></pre>';
+      continue;
+    }
+
+    // Box-drawing table block (┌─┐│└─┘)
+    if (isBoxLine(line)) {
+      var boxLines = [];
+      while (i < lines.length && isBoxLine(lines[i])) {
+        boxLines.push(lines[i]);
+        i++;
+      }
+      var rows = parseBoxTable(boxLines);
+      if (rows.length > 0) {
+        html += rowsToHtml(rows);
+      } else {
+        // Fallback: table parse failed, render as pre to avoid losing content
+        html += '<pre><code>' + esc(boxLines.join('\n')) + '</code></pre>';
+      }
+      continue;
+    }
+
+    // Markdown pipe table
+    if (line.indexOf('|') !== -1 && i + 1 < lines.length && /^\|?[\s\-:]+(\|[\s\-:]+)+\|?\s*$/.test(lines[i + 1])) {
+      var tableLines = [];
+      while (i < lines.length && lines[i].indexOf('|') !== -1 && lines[i].trim() !== '') {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      var tRows = [];
+      for (var t = 0; t < tableLines.length; t++) {
+        var tl = tableLines[t].trim();
+        if (/^\|?[\s\-:]+(\|[\s\-:]+)*\|?\s*$/.test(tl)) continue;
+        var cells = tl.split('|').map(function(c) { return c.trim(); });
+        if (cells.length && cells[0] === '') cells.shift();
+        if (cells.length && cells[cells.length - 1] === '') cells.pop();
+        if (cells.length > 0) tRows.push(cells);
+      }
+      if (tRows.length > 0) {
+        html += '<table><thead><tr>';
+        for (var th = 0; th < tRows[0].length; th++) {
+          html += '<th>' + inlineFormat(tRows[0][th]) + '</th>';
+        }
+        html += '</tr></thead><tbody>';
+        for (var tr = 1; tr < tRows.length; tr++) {
+          html += '<tr>';
+          for (var td = 0; td < tRows[0].length; td++) {
+            html += '<td>' + inlineFormat(tRows[tr][td] || '') + '</td>';
+          }
+          html += '</tr>';
+        }
+        html += '</tbody></table>';
+      }
+      continue;
+    }
+
+    // Horizontal rule: --- / *** / ___
+    if (/^(\*{3,}|-{3,}|_{3,})\s*$/.test(line.trim())) {
+      html += '<hr>';
+      i++;
+      continue;
+    }
+
+    // Heading: # ... ######
+    var headingMatch = line.match(/^(#{1,6})\s+(.+)/);
+    if (headingMatch) {
+      var level = headingMatch[1].length;
+      html += '<h' + level + '>' + inlineFormat(headingMatch[2]) + '</h' + level + '>';
+      i++;
+      continue;
+    }
+
+    // Blockquote: >
+    if (line.match(/^>\s?/)) {
+      var quoteLines = [];
+      while (i < lines.length && lines[i].match(/^>\s?/)) {
+        quoteLines.push(lines[i].replace(/^>\s?/, ''));
+        i++;
+      }
+      html += '<blockquote>' + parseMarkdown(quoteLines.join('\n')) + '</blockquote>';
+      continue;
+    }
+
+    // Unordered list: - or * or + (top-level, no leading whitespace)
+    // BUT skip CLI edit lines like "* Update(...)" — those are code block starts
+    if (line.match(/^([-*+])\s/) && !isCliEditLine(line.trim())) {
+      var listResult = parseList(lines, i, 'ul');
+      html += listResult.html;
+      i = listResult.end;
+      continue;
+    }
+
+    // Ordered list: 1. 2. etc (top-level)
+    if (line.match(/^\d+\.\s/)) {
+      var olResult = parseList(lines, i, 'ol');
+      html += olResult.html;
+      i = olResult.end;
+      continue;
+    }
+
+    // Paragraph: collect consecutive non-empty, non-block-start lines
+    var paraLines = [];
+    // First line is always included (it already passed all block checks above)
+    paraLines.push(lines[i]);
+    i++;
+    while (i < lines.length && lines[i].trim() !== '' && !isBlockStart(lines, i)) {
+      paraLines.push(lines[i]);
+      i++;
+    }
+    if (paraLines.length > 0) {
+      html += '<p>' + inlineFormat(paraLines.join('\n')) + '</p>';
+    }
+  }
+
+  return html;
+}
+
+// List parser — returns { html, end } where end is the first line AFTER the list
+function parseList(lines, startIdx, type) {
+  var items = [];
+  var i = startIdx;
+  var baseIndent = (lines[i].match(/^(\s*)/)[1] || '').length;
+  var itemRe = type === 'ul' ? /^(\s*)([-*+])\s(.*)/ : /^(\s*)(\d+)\.\s(.*)/;
+
+  while (i < lines.length) {
+    var line = lines[i];
+
+    // Skip blank lines between items, but stop if next non-blank isn't a list item at correct indent
+    if (line.trim() === '') {
+      var peek = i + 1;
+      while (peek < lines.length && lines[peek].trim() === '') peek++;
+      if (peek >= lines.length) break;
+      var peekIndent = (lines[peek].match(/^(\s*)/)[1] || '').length;
+      var peekMatch = lines[peek].match(itemRe);
+      if (peekMatch && peekIndent === baseIndent && !(type === 'ul' && isCliEditLine(lines[peek].trim()))) { i = peek; continue; }
+      // Also allow nested content under current item
+      if (peekIndent > baseIndent && items.length > 0) { i = peek; continue; }
+      break;
+    }
+
+    var indent = (line.match(/^(\s*)/)[1] || '').length;
+    var match = line.match(itemRe);
+
+    if (match && indent === baseIndent) {
+      // Stop if this line is actually a CLI edit marker (e.g. "* Update(...)")
+      if (type === 'ul' && isCliEditLine(line.trim())) break;
+      var content = type === 'ul' ? match[3] : match[3];
+      items.push({ content: content, sub: '' });
+      i++;
+    } else if (indent > baseIndent && items.length > 0) {
+      // Nested content under the last item — collect until we return to baseIndent
+      var subLines = [];
+      while (i < lines.length) {
+        var curIndent = (lines[i].match(/^(\s*)/)[1] || '').length;
+        if (lines[i].trim() === '') {
+          // Blank line: peek ahead to see if nested content continues
+          var peek2 = i + 1;
+          while (peek2 < lines.length && lines[peek2].trim() === '') peek2++;
+          if (peek2 >= lines.length) break;
+          var nextIndent = (lines[peek2].match(/^(\s*)/)[1] || '').length;
+          if (nextIndent <= baseIndent) break;
+          subLines.push(lines[i]);
+          i++;
+        } else if (curIndent > baseIndent) {
+          subLines.push(lines[i]);
+          i++;
+        } else {
+          break;
+        }
+      }
+      if (subLines.length > 0) {
+        var minIndent = Infinity;
+        subLines.forEach(function(sl) {
+          if (sl.trim()) {
+            var si = (sl.match(/^(\s*)/)[1] || '').length;
+            if (si < minIndent) minIndent = si;
+          }
+        });
+        var dedented = subLines.map(function(sl) {
+          return sl.substring(Math.min(minIndent, sl.length));
+        }).join('\n');
+        items[items.length - 1].sub = parseMarkdown(dedented);
+      }
+    } else {
+      break;
+    }
+  }
+
+  var tag = type;
+  var html = '<' + tag + '>';
+  for (var j = 0; j < items.length; j++) {
+    var item = items[j];
+    var taskMatch = item.content.match(/^\[([ xX])\]\s*(.*)/);
+    if (taskMatch && type === 'ul') {
+      var checked = taskMatch[1] !== ' ' ? ' checked' : '';
+      html += '<li><input type="checkbox"' + checked + ' disabled> ' + inlineFormat(taskMatch[2]) + item.sub + '</li>';
+    } else {
+      html += '<li>' + inlineFormat(item.content) + item.sub + '</li>';
+    }
+  }
+  html += '</' + tag + '>';
+  return { html: html, end: i };
+}
+
+// ========== Render ==========
+
+function render() {
+  var text = input.value;
+  if (!text.trim()) {
+    output.innerHTML = '<span style="color:#aaa">等待輸入...</span>';
+    return;
+  }
+  output.innerHTML = parseMarkdown(text);
+
+  // Add task-list class to ULs with checkboxes
+  output.querySelectorAll('ul').forEach(function(ul) {
+    if (ul.querySelector('input[type=checkbox]')) ul.classList.add('task-list');
+  });
+}
+
+// ========== Copy ==========
+
+function copyAll() {
+  copyElement(output);
+  showToast('已複製全部內容！');
+}
+
+function copyTableOnly() {
+  var tables = output.querySelectorAll('table');
+  if (tables.length === 0) {
+    showToast('沒有找到表格');
+    return;
+  }
+  // Wrap all tables in a container to copy together
+  var container = document.createElement('div');
+  tables.forEach(function(t) {
+    container.appendChild(t.cloneNode(true));
+  });
+  document.body.appendChild(container);
+  copyElement(container);
+  document.body.removeChild(container);
+  showToast('已複製 ' + tables.length + ' 個表格！');
+}
+
+function copyElement(el) {
+  // Use Clipboard API for rich text
+  var htmlContent = el.innerHTML;
+  var textContent = el.innerText;
+
+  // Try modern clipboard API first
+  if (navigator.clipboard && navigator.clipboard.write) {
+    var blob = new Blob([htmlContent], { type: 'text/html' });
+    var textBlob = new Blob([textContent], { type: 'text/plain' });
+    navigator.clipboard.write([
+      new ClipboardItem({
+        'text/html': blob,
+        'text/plain': textBlob
+      })
+    ]).catch(function() {
+      // Fallback
+      fallbackCopy(el);
+    });
+  } else {
+    fallbackCopy(el);
+  }
+}
+
+function fallbackCopy(el) {
   var range = document.createRange();
-  range.selectNode(table);
+  range.selectNodeContents(el);
   var sel = window.getSelection();
   sel.removeAllRanges();
   sel.addRange(range);
   document.execCommand('copy');
   sel.removeAllRanges();
-  var toast = document.getElementById('toast');
-  toast.classList.add('show');
-  setTimeout(function() { toast.classList.remove('show'); }, 2000);
 }
 
+function showToast(msg) {
+  var toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(function() { toast.classList.remove('show'); }, 2500);
+}
+
+// Init
 render();
 </script>
 </body>
