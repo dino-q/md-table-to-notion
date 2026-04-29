@@ -275,6 +275,87 @@ function rowsToHtml(rows) {
   return html;
 }
 
+// A box block without column-junction chars (┬ ┴ ┼) is a flowchart / single
+// rectangle, not a table. Render as <pre> to keep alignment.
+function isFlowchartBlock(boxLines) {
+  for (var i = 0; i < boxLines.length; i++) {
+    if (/[┬┴┼]/.test(boxLines[i])) return false;
+  }
+  return true;
+}
+
+// Greedy: starting from i (just past the initial box collection), absorb
+// arrow/label connector lines and consecutive flowchart boxes into one block.
+// Stops when next box is a real table, or no more flowchart follows.
+// Returns { boxLines, end }.
+function expandFlowchart(lines, i, initialBoxLines) {
+  var boxLines = initialBoxLines.slice();
+  while (true) {
+    var k = i;
+    var nonBlank = 0;
+    while (k < lines.length) {
+      if (lines[k].trim() === '') { k++; continue; }
+      if (isBoxLine(lines[k])) break;
+      nonBlank++;
+      if (nonBlank > 4) break;
+      k++;
+    }
+    if (k < lines.length && isBoxLine(lines[k])) {
+      var probe = [];
+      var pk = k;
+      while (pk < lines.length && isBoxLine(lines[pk])) {
+        probe.push(lines[pk]); pk++;
+      }
+      if (isFlowchartBlock(probe)) {
+        for (var ck = i; ck < k; ck++) boxLines.push(lines[ck]);
+        probe.forEach(function(p) { boxLines.push(p); });
+        i = pk;
+        continue;
+      }
+    }
+    break;
+  }
+  // Absorb trailing arrow/label lines (terminal end-marker like "▼ Claude Read 圖片")
+  var k2 = i;
+  var trailing = [];
+  while (k2 < lines.length) {
+    var t = lines[k2].trim();
+    if (t === '') break;
+    if (isBoxLine(lines[k2])) break;
+    if (/[▼▲↓↑→←]/.test(lines[k2]) || t.length < 30) {
+      trailing.push(lines[k2]); k2++;
+    } else {
+      break;
+    }
+  }
+  if (trailing.length > 0 && (k2 >= lines.length || lines[k2].trim() === '')) {
+    trailing.forEach(function(tl) { boxLines.push(tl); });
+    i = k2;
+  }
+  return { boxLines: boxLines, end: i };
+}
+
+function escapePipe(s) {
+  return String(s).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+}
+
+// parseBoxTable rows → markdown pipe-table string
+function rowsToMarkdown(rows) {
+  if (!rows.length) return '';
+  var width = rows[0].length;
+  var lines = [];
+  lines.push('| ' + rows[0].map(escapePipe).join(' | ') + ' |');
+  var sep = [];
+  for (var k = 0; k < width; k++) sep.push(' --- ');
+  lines.push('|' + sep.join('|') + '|');
+  for (var r = 1; r < rows.length; r++) {
+    var cells = [];
+    for (var c = 0; c < width; c++) cells.push(escapePipe(rows[r][c] || ''));
+    lines.push('| ' + cells.join(' | ') + ' |');
+  }
+  return lines.join('\n');
+}
+
 // ========== Markdown Parser ==========
 
 function esc(s) {
@@ -487,14 +568,16 @@ function parseMarkdown(text) {
     var fenceMatch = line.match(/^(`{3,}|~{3,})(\w*)/);
     if (fenceMatch) {
       var fence = fenceMatch[1];
+      var lang = fenceMatch[2];
       var codeLines = [];
       i++;
       while (i < lines.length) {
-        if (lines[i].trim() === fence || lines[i].trim().indexOf(fence) === 0) { i++; break; }
+        if (lines[i].trim() === fence) { i++; break; }
         codeLines.push(lines[i]);
         i++;
       }
-      html += '<pre><code>' + esc(codeLines.join('\n')) + '</code></pre>';
+      var classAttr = lang ? ' class="language-' + esc(lang) + '"' : '';
+      html += '<pre><code' + classAttr + '>' + esc(codeLines.join('\n')) + '</code></pre>';
       continue;
     }
 
@@ -560,18 +643,25 @@ function parseMarkdown(text) {
       continue;
     }
 
-    // Box-drawing table block (┌─┐│└─┘)
+    // Box-drawing block: classify by char set.
+    // No ┬┴┼ → flowchart / single rectangle → <pre> (greedy: merge whole flowchart)
+    // Has ┬┴┼ → real table → parseBoxTable
     if (isBoxLine(line)) {
       var boxLines = [];
       while (i < lines.length && isBoxLine(lines[i])) {
         boxLines.push(lines[i]);
         i++;
       }
+      if (isFlowchartBlock(boxLines)) {
+        var expanded = expandFlowchart(lines, i, boxLines);
+        html += '<pre><code>' + esc(expanded.boxLines.join('\n')) + '</code></pre>';
+        i = expanded.end;
+        continue;
+      }
       var rows = parseBoxTable(boxLines);
       if (rows.length > 0) {
         html += rowsToHtml(rows);
       } else {
-        // Fallback: table parse failed, render as pre to avoid losing content
         html += '<pre><code>' + esc(boxLines.join('\n')) + '</code></pre>';
       }
       continue;
@@ -701,8 +791,7 @@ function parseList(lines, startIdx, type) {
     if (match && indent === baseIndent) {
       // Stop if this line is actually a CLI edit marker (e.g. "* Update(...)")
       if (type === 'ul' && isCliEditLine(line.trim())) break;
-      var content = type === 'ul' ? match[3] : match[3];
-      items.push({ content: content, sub: '' });
+      items.push({ content: match[3], sub: '' });
       i++;
     } else if (indent > baseIndent && items.length > 0) {
       // Nested content under the last item — collect until we return to baseIndent
@@ -759,6 +848,109 @@ function parseList(lines, startIdx, type) {
   return { html: html, end: i };
 }
 
+// ========== Markdown serializer (for clipboard text/plain) ==========
+
+// Walk raw input; rewrite CLI-only constructs into clean markdown so Notion's
+// markdown-on-paste handler turns them into native blocks. Pass-through for
+// anything that's already standard markdown.
+function normalizeToMarkdown(text) {
+  var lines = text.split('\n');
+  var out = [];
+  var i = 0;
+  while (i < lines.length) {
+    var line = lines[i];
+
+    // Fenced code: keep verbatim (language tag included)
+    var fm = line.match(/^(`{3,}|~{3,})/);
+    if (fm) {
+      var fence = fm[1];
+      out.push(line); i++;
+      while (i < lines.length) {
+        out.push(lines[i]);
+        if (lines[i].trim() === fence) { i++; break; }
+        i++;
+      }
+      continue;
+    }
+
+    // CLI code block (line-numbered / ●⎿ / Update())
+    var codeEnd = detectCodeBlock(lines, i);
+    if (codeEnd > i) {
+      var blk = [];
+      for (var ci = i; ci < codeEnd; ci++) blk.push(lines[ci]);
+      while (blk.length && blk[blk.length - 1].trim() === '') blk.pop();
+      out.push('```');
+      blk.forEach(function(b) { out.push(b); });
+      out.push('```');
+      i = codeEnd;
+      continue;
+    }
+
+    // Box-drawing block
+    if (isBoxLine(line)) {
+      var boxLines = [];
+      while (i < lines.length && isBoxLine(lines[i])) {
+        boxLines.push(lines[i]); i++;
+      }
+      if (isFlowchartBlock(boxLines)) {
+        var expanded = expandFlowchart(lines, i, boxLines);
+        out.push('```');
+        expanded.boxLines.forEach(function(b) { out.push(b); });
+        out.push('```');
+        i = expanded.end;
+      } else {
+        var rs = parseBoxTable(boxLines);
+        if (rs.length > 0) {
+          out.push(rowsToMarkdown(rs));
+        } else {
+          out.push('```');
+          boxLines.forEach(function(b) { out.push(b); });
+          out.push('```');
+        }
+      }
+      continue;
+    }
+
+    out.push(line);
+    i++;
+  }
+  return out.join('\n');
+}
+
+// Extract just the tables as markdown pipe tables (for "copy table only").
+function extractTablesAsMarkdown(text) {
+  var lines = text.split('\n');
+  var tables = [];
+  var i = 0;
+  while (i < lines.length) {
+    var line = lines[i];
+    // Pipe table
+    if (line.indexOf('|') !== -1 && i + 1 < lines.length &&
+        /^\|?[\s\-:]+(\|[\s\-:]+)+\|?\s*$/.test(lines[i + 1])) {
+      var tlines = [];
+      while (i < lines.length && lines[i].indexOf('|') !== -1 && lines[i].trim() !== '') {
+        tlines.push(lines[i]); i++;
+      }
+      tables.push(tlines.join('\n'));
+      continue;
+    }
+    // Box table
+    if (isBoxLine(line)) {
+      var bx = [];
+      while (i < lines.length && isBoxLine(lines[i])) {
+        bx.push(lines[i]); i++;
+      }
+      if (!isFlowchartBlock(bx)) {
+        var rs = parseBoxTable(bx);
+        if (rs.length > 0) tables.push(rowsToMarkdown(rs));
+      }
+      continue;
+    }
+    i++;
+  }
+  return tables;
+}
+
 // ========== Render ==========
 
 function render() {
@@ -778,48 +970,51 @@ function render() {
 // ========== Copy ==========
 
 function copyAll() {
-  copyElement(output);
+  var markdown = normalizeToMarkdown(input.value);
+  writeClipboard(output.innerHTML, markdown, output);
   showToast('已複製全部內容！');
 }
 
 function copyTableOnly() {
-  var tables = output.querySelectorAll('table');
+  var tables = extractTablesAsMarkdown(input.value);
   if (tables.length === 0) {
     showToast('沒有找到表格');
     return;
   }
-  // Wrap all tables in a container to copy together
-  var container = document.createElement('div');
-  tables.forEach(function(t) {
-    container.appendChild(t.cloneNode(true));
+  var markdown = tables.length > 1
+    ? tables.map(function(t, idx) { return '## 表格 ' + (idx + 1) + '\n\n' + t; }).join('\n\n')
+    : tables[0];
+
+  // HTML channel: reuse the already-rendered <table> elements with separators
+  var htmlTables = output.querySelectorAll('table');
+  var htmlBuf = '';
+  htmlTables.forEach(function(t, idx) {
+    if (htmlTables.length > 1) htmlBuf += '<h2>表格 ' + (idx + 1) + '</h2>';
+    htmlBuf += t.outerHTML;
   });
-  document.body.appendChild(container);
-  copyElement(container);
-  document.body.removeChild(container);
+
+  writeClipboard(htmlBuf, markdown, output);
   showToast('已複製 ' + tables.length + ' 個表格！');
 }
 
-function copyElement(el) {
-  // Use Clipboard API for rich text
-  var htmlContent = el.innerHTML;
-  var textContent = el.innerText;
-
-  // Try modern clipboard API first
+function writeClipboard(htmlContent, plainText, fallbackEl) {
   if (navigator.clipboard && navigator.clipboard.write) {
-    var blob = new Blob([htmlContent], { type: 'text/html' });
-    var textBlob = new Blob([textContent], { type: 'text/plain' });
     navigator.clipboard.write([
       new ClipboardItem({
-        'text/html': blob,
-        'text/plain': textBlob
+        'text/html':  new Blob([htmlContent], { type: 'text/html' }),
+        'text/plain': new Blob([plainText],   { type: 'text/plain' })
       })
     ]).catch(function() {
-      // Fallback
-      fallbackCopy(el);
+      if (fallbackEl) fallbackCopy(fallbackEl);
     });
-  } else {
-    fallbackCopy(el);
+  } else if (fallbackEl) {
+    fallbackCopy(fallbackEl);
   }
+}
+
+// kept for backwards compat; now thin wrapper
+function copyElement(el) {
+  writeClipboard(el.innerHTML, el.innerText, el);
 }
 
 function fallbackCopy(el) {
